@@ -125,6 +125,7 @@ except OSError:
 
 out_names = ["clouds/cloud" + str(x) + ".png" for x in range(0, int(sys.argv[1]))]
 
+#TODO: multiprocessing
 for i in range(int(sys.argv[1])):
 	gen_cloud("clouds/cloud" + str(i) + ".png")
 
