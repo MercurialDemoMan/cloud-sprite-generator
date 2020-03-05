@@ -5,7 +5,7 @@
 ## Usage
  
  - script takes one argument -> how many clouds to generate
- - you can modify cloud attributes by modyfing the script constants:
+ - you can modify cloud attributes by modyfing script constants:
 ```python
 CLOUD_RADIUS        # width and height of the image
 CLOUD_FLUFFYNES_MAG # max radius for cloud bump
