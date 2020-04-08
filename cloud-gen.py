@@ -4,6 +4,8 @@ import sys
 import os
 import random
 import math
+from multiprocessing import Process, Lock
+from timeit import default_timer as timer
 
 from PIL import Image
 
@@ -14,13 +16,13 @@ CLOUD_FLUFFYNESS_MIN = 40
 CLOUD_SPREAD         = 100
 CLOUD_DENSITY    	 = 16
 
-# create noise buffer
-noise = [[0 for x in range(CLOUD_RADIUS)] for y in range(CLOUD_RADIUS)]
 
 
-# smooth noise values in "noise" buffer based on its neighbours
-# source: https://lodev.org/cgtutor/randomnoise.html
-def smooth_noise(x, y):
+def smooth_noise(x, y, noise):
+	"""smooth noise values in "noise" buffer based on its neighbours
+	source: https://lodev.org/cgtutor/randomnoise.html
+	"""
+
 
 	fract_x = x - int(x)
 	fract_y = y - int(y)
@@ -41,35 +43,39 @@ def smooth_noise(x, y):
 	return value
 
 
-# combine multiple scales of smooth noises
-# source: https://lodev.org/cgtutor/randomnoise.html
-def turbulence(x, y, size):
+
+def turbulence(x, y, size, noise):
+	"""combine multiple scales of smooth noises
+	source: https://lodev.org/cgtutor/randomnoise.html
+	"""
 
 	value     = 0.0
 	size      = float(size)
 	init_size = size
 
 	while(size >= 1):
-		value += smooth_noise(x / size, y / size) * size
+		value += smooth_noise(x / size, y / size, noise) * size
 		size  /= 2.0
 
 	return 128.0 * value / init_size
 
 
-# clamp function, duh..
+
 def clamp(x, min, max):
+	"""clamp function
+	"""
 	if(x < min): x = min
 	if(x > max): x = max
 	return x
 
 
-# generate cloud based on constants defined in header
-def gen_cloud(out_path):
 
-	# generate noise
-	for y in range(0, CLOUD_RADIUS):
-		for x in range(0, CLOUD_RADIUS):
-			noise[y][x] = random.random()
+def gen_cloud(out_path, lock):
+	"""generate cloud
+	based on global constants generate cloud image
+	"""
+
+	noise = [[random.random() for x in range(CLOUD_RADIUS)] for y in range(CLOUD_RADIUS)]
 
 	# create random circles buffer
 	# which will act as boundary 
@@ -99,34 +105,70 @@ def gen_cloud(out_path):
 				val  = max(val, circles[i][2] - math.sqrt(dx * dx + dy * dy))
 
 			# smooth out noise data, bound it with circles and write it to image
-			val = (val / 255) * (turbulence(x, y, 64) / 255)
+			val = (val / 255) * (turbulence(x, y, 64, noise) / 255)
 			out.putpixel((x, y), (255, 255, 255, int(clamp(val * 255, 0.0, 255.0))))
+
+		lock.acquire()
+		print("gen_cloud() log: [" + out_path + "] " + str(y) + "/" + str(CLOUD_RADIUS))
+		lock.release()
 
 	# write image on disk
 	out.save(out_path)
 
+	# log successful generation
+	lock.acquire()
 	print("gen_cloud() log: generated [" + out_path + "] cloud")
+	lock.release()
 
 
-####################
-# main program
-####################
 
-# check arguments
-if(len(sys.argv) != 2):
-	print("usage: cloud-gen.py [number of clounds to generate]")
-	sys.exit(1)
+if __name__ == "__main__":
+	"""main program
+	"""
+	# check arguments
+	if(len(sys.argv) != 2):
+		print("usage: cloud-gen.py [number of clounds to generate]")
+		sys.exit(1)
 
-# create folder to store all clouds
-try:
-	os.mkdir("clouds")
-except OSError:
-	pass
+	# create folder to store all clouds
+	try:
+		os.mkdir("clouds")
+	except OSError:
+		pass
 
-out_names = ["clouds/cloud" + str(x) + ".png" for x in range(0, int(sys.argv[1]))]
+	# generate paths
+	out_names = ["clouds/cloud" + str(x) + ".png" for x in range(0, int(sys.argv[1]))]
 
-#TODO: multiprocessing
-for i in range(int(sys.argv[1])):
-	gen_cloud("clouds/cloud" + str(i) + ".png")
+	# manage multiprocessing
+	cloud_processes = []
+
+	# calculate elapsed time
+	start = timer()
+
+	# main loop
+	for i in range(int(sys.argv[1])):
+		# create lock for printing log
+		print_lock = Lock()
+
+		# log start of process
+		print_lock.acquire()
+		print("__main__ log: Start generating cloud [clouds/cloud" + str(i) + ".png]")
+		print_lock.release()
+
+		
+		# start the generation
+		p = Process(target = gen_cloud, args = ("clouds/cloud" + str(i) + ".png", print_lock))
+		p.start()
+
+		# keep track of all processes we created
+		cloud_processes.append(p)
+
+	# wait for every process
+	for i in cloud_processes:
+		i.join()
+
+	# calculate and print elapsed time
+	end = timer()
+	print("__main__ log: elapsed time: " + str(end - start) + "s")
 
 
